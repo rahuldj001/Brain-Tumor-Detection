@@ -54,8 +54,44 @@ def initialize_nnunet():
         
         # Check if weights exist
         if not os.path.exists(NNUNET_WEIGHTS_PATH):
-            print(f"Error: nnU-Net weights not found at {NNUNET_WEIGHTS_PATH}")
-            return False
+            print(f"Weights not found locally. Attempting to download from S3...")
+            
+            WEIGHTS_URL = "https://your-bucket-name.s3.amazonaws.com/weights.zip"
+            WEIGHTS_ZIP_PATH = "weights.zip"
+            
+            try:
+                import requests
+                import zipfile
+                
+                # Download
+                print(f"Downloading from {WEIGHTS_URL}...")
+                with requests.get(WEIGHTS_URL, stream=True) as r:
+                    r.raise_for_status()
+                    with open(WEIGHTS_ZIP_PATH, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                
+                # Unzip
+                print("Unzipping weights...")
+                with zipfile.ZipFile(WEIGHTS_ZIP_PATH, 'r') as zip_ref:
+                    # Extract to nnunet_weights folder
+                    zip_ref.extractall("nnunet_weights")
+                    
+                # Cleanup
+                if os.path.exists(WEIGHTS_ZIP_PATH):
+                    os.remove(WEIGHTS_ZIP_PATH)
+                    
+                print("✓ Weights downloaded and extracted successfully")
+                
+                # Verify path exists after extraction
+                if not os.path.exists(NNUNET_WEIGHTS_PATH):
+                    print(f"Error: Extraction failed to create expected path: {NNUNET_WEIGHTS_PATH}")
+                    return False
+                    
+            except Exception as e:
+                print(f"Error downloading weights: {e}")
+                print(f"Please manually download weights to: {NNUNET_WEIGHTS_PATH}")
+                return False
         
         # Initialize predictor with CPU-optimized settings
         # For faster inference on CPU: reduce tile overlap, disable augmentations
@@ -276,4 +312,4 @@ if __name__ == '__main__':
     print("=" * 60 + "\n")
     
     # Start Flask server
-    app.run(port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5000, debug=False)
