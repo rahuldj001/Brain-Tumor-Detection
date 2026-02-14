@@ -1,0 +1,12 @@
+Flask
+flask-cors
+gunicorn
+numpy
+matplotlib
+Pillow
+opencv-python-headless
+torch>=2.0.0
+nnunetv2>=2.2
+nibabel>=5.0.0
+SimpleITK>=2.2.0
+scikit-image>=0.21.0
