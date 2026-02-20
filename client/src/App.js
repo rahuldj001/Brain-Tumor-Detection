@@ -260,6 +260,8 @@ function App() {
                       originalImage={predictions.original_image || images[0]?.base64_file}
                       overlayImage={predictions.overlay_image}
                       message={predictions.message}
+                      tumorType={predictions.tumor_type}
+                      confidence={predictions.confidence}
                     />
                   )}
 

@@ -19,6 +19,21 @@ except ImportError as e:
     print("Falling back to VGG16 model")
     NNUNET_AVAILABLE = False
 
+# Classifier imports
+try:
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+    import tensorflow as tf
+    from tensorflow.keras.models import load_model
+    CLASSIFIER_AVAILABLE = True
+    
+    class CustomDepthwiseConv2D(tf.keras.layers.DepthwiseConv2D):
+        def __init__(self, **kwargs):
+            kwargs.pop('groups', None)
+            super().__init__(**kwargs)
+except ImportError as e:
+    print(f"Warning: TensorFlow not available for classification: {e}")
+    CLASSIFIER_AVAILABLE = False
+
 # Utility imports
 from utils.image_converter import prepare_nnunet_input, convert_base64_to_image
 from utils.segmentation_visualizer import extract_middle_slice, create_overlay, image_to_base64, normalize_for_display
@@ -39,6 +54,35 @@ os.makedirs(PREDICTION_FOLDER, exist_ok=True)
 
 # Global predictor variable
 predictor = None
+classifier_model = None
+
+
+def initialize_classifier():
+    """Initialize MobileNetV2 tumor classifier."""
+    global classifier_model
+    if not CLASSIFIER_AVAILABLE:
+        print("TensorFlow not available, skipping classifier initialization")
+        return False
+    
+    try:
+        model_path = 'cnn_model.h5'
+        if os.path.exists(model_path):
+            print("Initializing classifier model...")
+            classifier_model = load_model(
+                model_path, 
+                custom_objects={'DepthwiseConv2D': CustomDepthwiseConv2D},
+                compile=False
+            )
+            print("✓ Classifier initialized successfully")
+            return True
+        else:
+            print(f"Classifier model not found at {model_path}")
+            return False
+    except Exception as e:
+        print(f"Error initializing classifier: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def initialize_nnunet():
@@ -56,7 +100,7 @@ def initialize_nnunet():
         if not os.path.exists(NNUNET_WEIGHTS_PATH):
             print(f"Weights not found locally. Attempting to download from S3...")
             
-            WEIGHTS_URL = "https://your-bucket-name.s3.amazonaws.com/weights.zip"
+            WEIGHTS_URL = "https://brain-tumor-weights-2024.s3.us-east-1.amazonaws.com/weights.zip"
             WEIGHTS_ZIP_PATH = "weights.zip"
             
             try:
@@ -252,6 +296,54 @@ def predict():
             statistics = get_tumor_statistics(segmentation_3d, voxel_spacing=(1.0, 1.0, 1.0))
             display_stats = format_for_display(statistics)
             
+            # --- START CLASSIFICATION ---
+            tumor_type = "No Tumor Detected"
+            confidence = 0.0
+            
+            if display_stats["tumor_detected"]:
+                if CLASSIFIER_AVAILABLE and classifier_model is not None:
+                    try:
+                        print("Running tumor classification on largest slice...")
+                        # 1. Identify slice with maximum tumor area
+                        tumor_mask = (segmentation_3d > 0).astype(int)
+                        slice_areas = np.sum(tumor_mask, axis=(0, 1))
+                        max_tumor_slice_idx = np.argmax(slice_areas)
+                        
+                        # 2. Extract that slice from T1ce (0001) or original (0000)
+                        t1ce_path = os.path.join(input_dir, 'case_0000_0001.nii.gz')
+                        if not os.path.exists(t1ce_path):
+                            t1ce_path = os.path.join(input_dir, 'case_0000_0000.nii.gz')
+                        
+                        t1ce_nii = nib.load(t1ce_path)
+                        t1ce_3d = t1ce_nii.get_fdata()
+                        max_slice = t1ce_3d[:, :, max_tumor_slice_idx]
+                        
+                        # 3. Preprocess slice to 160x160x3
+                        max_slice_norm = normalize_for_display(max_slice)
+                        max_slice_rgb = cv2.cvtColor(max_slice_norm, cv2.COLOR_GRAY2RGB)
+                        max_slice_resized = cv2.resize(max_slice_rgb, (160, 160))
+                        
+                        classifier_input = np.expand_dims(max_slice_resized, axis=0).astype('float32') / 255.0
+                        
+                        # 4. Predict
+                        preds = classifier_model.predict(classifier_input, verbose=0)[0]
+                        pred_class_idx = np.argmax(preds)
+                        
+                        TUMOR_TYPES = ['Glioma', 'Meningioma', 'No Tumor', 'Pituitary']
+                        tumor_type = TUMOR_TYPES[pred_class_idx]
+                        confidence = float(preds[pred_class_idx])
+                        
+                    except Exception as e:
+                        print(f"Warning: Classification failed: {e}")
+                        traceback.print_exc()
+                        tumor_type = "Classification Error"
+                        confidence = 0.0
+                else:
+                    tumor_type = "Classification Unavailable"
+            else:
+                print("No tumor detected in segmentation; skipping classification.")
+            # --- END CLASSIFICATION ---
+            
             # Prepare response
             response = {
                 "success": True,
@@ -259,6 +351,8 @@ def predict():
                 "overlay_image": overlay_base64,
                 "statistics": display_stats,
                 "tumor_detected": display_stats["tumor_detected"],
+                "tumor_type": tumor_type,
+                "confidence": confidence,
                 "message": statistics["summary"]
             }
             
@@ -308,6 +402,9 @@ if __name__ == '__main__':
     else:
         print("\n✗ nnU-Net initialization failed")
         print("Please install dependencies: pip install -r requirements.txt")
+        
+    # Initialize Classifier
+    initialize_classifier()
     
     print("=" * 60 + "\n")
     

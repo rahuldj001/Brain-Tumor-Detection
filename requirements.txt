@@ -4,6 +4,7 @@ gunicorn
 numpy
 matplotlib
 Pillow
+requests
 opencv-python-headless
 torch>=2.0.0
 nnunetv2>=2.2

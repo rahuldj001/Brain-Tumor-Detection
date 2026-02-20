@@ -180,7 +180,7 @@ const Message = styled.div`
   line-height: 1.6;
 `;
 
-const SegmentationResult = ({ originalImage, overlayImage, message }) => {
+const SegmentationResult = ({ originalImage, overlayImage, message, tumorType, confidence }) => {
   const [zoom, setZoom] = React.useState(1);
   const [rotation, setRotation] = React.useState(0);
 
@@ -275,6 +275,12 @@ const SegmentationResult = ({ originalImage, overlayImage, message }) => {
         </ViewerCard>
       </ViewersContainer>
 
+      {(tumorType && tumorType !== "No Tumor Detected") && (
+        <Message style={{ background: 'rgba(74, 144, 255, 0.15)', borderTop: '1px solid rgba(100, 150, 255, 0.2)' }}>
+          <strong style={{ color: '#4a90ff' }}>Predicted Tumor Type:</strong> {tumorType}
+          {confidence ? <span style={{ marginLeft: '15px', color: '#a0b0d0', fontSize: '15px' }}>(Confidence: {(confidence * 100).toFixed(1)}%)</span> : null}
+        </Message>
+      )}
       {message && (
         <Message>{message}</Message>
       )}
