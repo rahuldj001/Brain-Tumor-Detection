@@ -40,7 +40,7 @@ from utils.segmentation_visualizer import extract_middle_slice, create_overlay, 
 from utils.tumor_analyzer import get_tumor_statistics, format_for_display
 
 app = Flask(__name__)
-cors = CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 # Configuration
@@ -180,7 +180,7 @@ def home():
     return jsonify(status)
 
 
-@app.route("/predict", methods=['POST'])
+@app.route("/predict", methods=['POST', 'OPTIONS'])
 def predict():
     """
     Main prediction endpoint for brain tumor segmentation.
@@ -194,6 +194,9 @@ def predict():
     - Tumor statistics
     - Classification results
     """
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+        
     print("=" * 60)
     print("Prediction request received")
     
