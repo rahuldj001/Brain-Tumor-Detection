@@ -327,11 +327,18 @@ def predict():
                         
                         # 4. Predict
                         preds = classifier_model.predict(classifier_input, verbose=0)[0]
+                        
+                        # Ignore the "No Tumor" class (index 2) since nnU-Net already found a tumor
+                        preds[2] = -1.0 
+                        
                         pred_class_idx = np.argmax(preds)
                         
                         TUMOR_TYPES = ['Glioma', 'Meningioma', 'No Tumor', 'Pituitary']
                         tumor_type = TUMOR_TYPES[pred_class_idx]
-                        confidence = float(preds[pred_class_idx])
+                        
+                        # Normalize confidence relative to the remaining 3 valid tumor classes
+                        valid_sum = preds[0] + preds[1] + preds[3]
+                        confidence = float(preds[pred_class_idx] / valid_sum) if valid_sum > 0 else float(preds[pred_class_idx])
                         
                     except Exception as e:
                         print(f"Warning: Classification failed: {e}")
